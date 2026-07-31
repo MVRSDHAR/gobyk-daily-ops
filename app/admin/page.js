@@ -57,7 +57,9 @@ export default function AdminDashboard() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
         <div style={{ background: '#161820', color: '#F5A623', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 13 }}>
           🛡 Admin / HO
-        </div>
+        </div><div onClick={() => router.push('/admin/entries')} style={{ background: '#161820', color: '#22C55E', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', textAlign: 'center', marginTop: 8 }}>
+  ✏️ Edit Entries
+</div>
         <div onClick={handleLogout} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer' }}>Log out</div>
       </div>
 
