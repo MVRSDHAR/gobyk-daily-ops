@@ -8,18 +8,35 @@ function todayStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+const TABS = [
+  { key: 'daily', label: 'Daily', color: '#F5A623' },
+  { key: 'monthly', label: 'Monthly', color: '#3B82F6' },
+];
+
 export default function AdminDashboard() {
   const router = useRouter();
-  const [rows, setRows] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [allEntries, setAllEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState('admin'); // set from users table below
   const [debugError, setDebugError] = useState('');
+
+  const [mode, setMode] = useState('daily');
+  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [selectedMonth, setSelectedMonth] = useState(todayStr().slice(0, 7));
+  const [sortCol, setSortCol] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [sortMenuOpen, setSortMenuOpen] = useState(null);
 
   useEffect(() => {
     async function load() {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData?.user) { router.push('/login'); return; }
 
-      const { data: branches, error: branchError } = await supabase.from('branches').select('*').order('name');
+      const { data: profile } = await supabase.from('users').select('role').eq('auth_id', userData.user.id).single();
+      if (profile?.role) setRole(profile.role);
+
+      const { data: branchList, error: branchError } = await supabase.from('branches').select('*').order('name');
       const { data: entries, error: entryError } = await supabase
         .from('daily_entries')
         .select('*')
@@ -27,14 +44,14 @@ export default function AdminDashboard() {
 
       if (branchError) setDebugError('Branches error: ' + branchError.message);
       else if (entryError) setDebugError('Entries error: ' + entryError.message);
-      else if (!branches || branches.length === 0) setDebugError('Branches query succeeded but returned 0 rows.');
 
-      const combined = (branches || []).map((b) => {
-        const latest = (entries || []).find((e) => e.branch_id === b.id);
-        return { branch: b, latest };
-      });
+      setBranches(branchList || []);
+      setAllEntries(entries || []);
 
-      setRows(combined);
+      if (entries && entries.length > 0) {
+        setSelectedDate(entries[0].entry_date);
+        setSelectedMonth(entries[0].entry_date.slice(0, 7));
+      }
       setLoading(false);
     }
     load();
@@ -45,64 +62,177 @@ export default function AdminDashboard() {
     router.push('/login');
   }
 
-  const today = todayStr();
-  const stale = rows.filter((r) => r.latest && r.latest.entry_date !== today).map((r) => r.branch.name);
-  const noData = rows.filter((r) => !r.latest).map((r) => r.branch.name);
+  let branchRows = [];
+  let summaryLabel = '';
 
-  const totalVolume = rows.reduce((sum, r) => sum + (r.latest?.delivered_volume || 0), 0);
-  const totalRevenue = rows.reduce((sum, r) => sum + Number(r.latest?.revenue || 0), 0);
+  if (mode === 'daily') {
+    summaryLabel = selectedDate
+      ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '—';
+    branchRows = branches.map((b) => {
+      const entry = allEntries.find((e) => e.branch_id === b.id && e.entry_date === selectedDate);
+      return { branch: b, entry, volume: entry?.delivered_volume || 0, revenue: Number(entry?.revenue || 0) };
+    });
+  } else {
+    summaryLabel = selectedMonth
+      ? new Date(selectedMonth + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+      : '—';
+    branchRows = branches.map((b) => {
+      const monthEntries = allEntries.filter((e) => e.branch_id === b.id && e.entry_date.startsWith(selectedMonth));
+      const volume = monthEntries.reduce((s, e) => s + (e.delivered_volume || 0), 0);
+      const revenue = monthEntries.reduce((s, e) => s + Number(e.revenue || 0), 0);
+      return { branch: b, entry: monthEntries[0], volume, revenue, dayCount: monthEntries.length };
+    });
+  }
+
+  // sort
+  branchRows = [...branchRows].sort((a, b) => {
+    let av, bv;
+    if (sortCol === 'name') { av = a.branch.name; bv = b.branch.name; }
+    else if (sortCol === 'volume') { av = a.volume; bv = b.volume; }
+    else { av = a.revenue; bv = b.revenue; }
+    if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+
+  const totalVolume = branchRows.reduce((s, r) => s + r.volume, 0);
+  const totalRevenue = branchRows.reduce((s, r) => s + r.revenue, 0);
+  const missing = mode === 'daily' ? branchRows.filter((r) => !r.entry).map((r) => r.branch.name) : [];
+
+  const canEdit = role === 'admin' || role === 'ho_manager';
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+    setSortMenuOpen(null);
+  }
 
   return (
-    <div style={{ padding: 14, maxWidth: 480, margin: '0 auto', color: '#E8E9ED' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <div style={{ background: '#161820', color: '#F5A623', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 13 }}>
-          🛡 Admin / HO
-        </div><div onClick={() => router.push('/admin/entries')} style={{ background: '#161820', color: '#22C55E', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', textAlign: 'center', marginTop: 8 }}>
-  ✏️ Edit Entries
-</div>
-        <div onClick={handleLogout} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer' }}>Log out</div>
+    <div style={{ fontFamily: "'Manrope', sans-serif", background: '#000000', minHeight: '100vh', padding: 14 }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', color: '#E8E9ED' }}>
+
+        {/* Header row: role + permission-gated actions */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ background: '#161820', color: '#F5A623', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 13 }}>
+            🛡 {role === 'admin' ? 'Admin' : role === 'ho_manager' ? 'HO Manager' : 'Manager'}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div
+              onClick={() => canEdit && router.push('/admin/entries')}
+              title="Edit entries"
+              style={{
+                width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: '#161820', border: '1px solid #2A2D3A',
+                opacity: canEdit ? 1 : 0.35, cursor: canEdit ? 'pointer' : 'not-allowed',
+                fontSize: 15,
+              }}
+            >
+              ✏️
+            </div>
+            <div onClick={handleLogout} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer' }}>Log out</div>
+          </div>
+        </div>
+
+        {debugError && (
+          <div style={{ background: 'rgba(255,77,94,0.15)', border: '1px solid #FF4D5E', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, marginBottom: 12 }}>
+            🐛 {debugError}
+          </div>
+        )}
+
+        {/* Summary card with bordered stat boxes */}
+        <div style={{ background: '#161820', borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#9096A8', textTransform: 'uppercase', marginBottom: 2 }}>
+            {mode === 'daily' ? 'Daily Summary' : 'Monthly Summary'}
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: TABS.find(t => t.key === mode).color, marginBottom: 10 }}>
+            {summaryLabel}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Volume</div>
+              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{totalVolume}</div>
+              <div style={{ fontSize: 11, color: '#22C55E', fontWeight: 700 }}>{branchRows.filter(r => r.entry).length}/{branchRows.length} reporting</div>
+            </div>
+            <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
+              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Revenue</div>
+              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>₹{totalRevenue.toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: 11, color: missing.length > 0 ? '#FF4D5E' : '#22C55E', fontWeight: 700 }}>
+                {missing.length > 0 ? `${missing.length} missing` : 'All reported'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Underline tabs */}
+        <div style={{ display: 'flex', gap: 18, borderBottom: '1px solid #23252F', marginBottom: 12 }}>
+          {TABS.map((t) => (
+            <div
+              key={t.key}
+              onClick={() => setMode(t.key)}
+              style={{
+                paddingBottom: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                color: mode === t.key ? t.color : '#9096A8',
+                opacity: mode === t.key ? 1 : 0.45,
+                borderBottom: mode === t.key ? `2px solid ${t.color}` : '2px solid transparent',
+              }}
+            >
+              {t.label}
+            </div>
+          ))}
+        </div>
+
+        {mode === 'daily' ? (
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
+            style={{ width: '100%', background: '#161820', color: '#E8E9ED', border: '1px solid #2A2D3A', borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 13 }} />
+        ) : (
+          <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}
+            style={{ width: '100%', background: '#161820', color: '#E8E9ED', border: '1px solid #2A2D3A', borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 13 }} />
+        )}
+
+        {mode === 'daily' && missing.length > 0 && (
+          <div style={{ background: 'rgba(255,77,94,0.1)', border: '1px solid rgba(255,77,94,0.3)', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, marginBottom: 14 }}>
+            ⚠ No entry: {missing.join(', ')}
+          </div>
+        )}
+
+        {/* 3-linked-column grid, single scroll container */}
+        {loading ? (
+          <p style={{ color: '#9096A8' }}>Loading...</p>
+        ) : (
+          <div style={{ background: '#161820', borderRadius: 12, border: '1px solid #23252F', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr', padding: '10px 12px', borderBottom: '1px solid #23252F', position: 'relative' }}>
+              <div onClick={() => toggleSort('name')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                Branch {sortCol === 'name' && (sortDir === 'asc' ? '▾' : '▴')}
+              </div>
+              <div onClick={() => toggleSort('volume')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+                Vol {sortCol === 'volume' && (sortDir === 'asc' ? '▾' : '▴')}
+              </div>
+              <div onClick={() => toggleSort('revenue')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+                Revenue {sortCol === 'revenue' && (sortDir === 'asc' ? '▾' : '▴')}
+              </div>
+            </div>
+
+            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+              {branchRows.map((r, i) => (
+                <div
+                  key={r.branch.id}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr', padding: '12px',
+                    borderBottom: i < branchRows.length - 1 ? '1px solid #1B1D26' : 'none',
+                    opacity: r.entry ? 1 : 0.4,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{r.branch.name}</div>
+                  <div style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.volume}</div>
+                  <div style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+                    ₹{r.revenue.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-
-      {debugError && (
-        <div style={{ background: 'rgba(255,77,94,0.15)', border: '1px solid #FF4D5E', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, margin: '14px 0' }}>
-          🐛 DEBUG: {debugError}
-        </div>
-      )}
-
-      {(stale.length > 0 || noData.length > 0) && (
-        <div style={{ background: 'rgba(255,77,94,0.1)', border: '1px solid rgba(255,77,94,0.3)', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, margin: '14px 0' }}>
-          {stale.length > 0 && <>⚠ Stale: {stale.join(', ')}. </>}
-          {noData.length > 0 && <>No data yet: {noData.join(', ')}.</>}
-        </div>
-      )}
-
-      <div style={{ background: '#161820', borderRadius: 16, padding: 16, marginTop: 14, marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#9096A8', textTransform: 'uppercase', marginBottom: 10 }}>Gobyk Summary</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
-            <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Latest volume</div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{totalVolume}</div>
-          </div>
-          <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
-            <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Latest revenue</div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>₹{totalRevenue.toLocaleString('en-IN')}</div>
-          </div>
-        </div>
-      </div>
-
-      <h3 style={{ color: '#9096A8', fontSize: 12, textTransform: 'uppercase', marginBottom: 10 }}>All Branches ({rows.length})</h3>
-      {loading && <p style={{ color: '#9096A8' }}>Loading...</p>}
-      {!loading && rows.length === 0 && <p style={{ color: '#9096A8' }}>No branches returned by the query.</p>}
-      {rows.map((r) => (
-        <div key={r.branch.id} style={{ background: '#161820', border: '1px solid #23252F', borderRadius: 12, padding: 12, marginBottom: 8, opacity: r.latest ? 1 : 0.4 }}>
-          <div style={{ fontWeight: 700 }}>{r.branch.name}</div>
-          <div style={{ fontSize: 13, color: '#9096A8' }}>
-            {r.latest
-              ? `${r.latest.entry_date} · Vol: ${r.latest.delivered_volume} · ₹${Number(r.latest.revenue).toLocaleString('en-IN')}`
-              : 'No entries yet'}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
