@@ -14,8 +14,9 @@ const TABS = [
 ];
 
 // Metric pairs available in the horizontal scroller.
-// Each maps to two raw field names to sum/read from daily_entries,
-// plus an optional "mtd" field name to use for the monthly fallback.
+// mtdField = a real static MTD column to use once the month only has 1 logged entry.
+// If mtdField is omitted, that metric has no separate MTD source (e.g. payment-method
+// breakdowns), so monthly will legitimately equal daily until multiple days are logged.
 const METRIC_PAIRS = [
   { key: 'vol_rev', label: 'Vol / Revenue', color: '#F5A623',
     colB: { label: 'Vol', field: 'delivered_volume', mtdField: 'mtd_volume', money: false },
@@ -30,11 +31,11 @@ const METRIC_PAIRS = [
     colB: { label: 'AMC', field: 'amc_count', mtdField: 'mtd_amc', money: false },
     colC: { label: 'Reviews', field: 'google_reviews', mtdField: 'mtd_reviews', money: false } },
   { key: 'parts_labour', label: 'Parts / Labour', color: '#EC4899',
-    colB: { label: 'Parts', field: 'parts', money: true },
-    colC: { label: 'Labour', field: 'labour', money: true } },
+    colB: { label: 'Parts', field: 'parts', mtdField: 'mtd_parts', money: true },
+    colC: { label: 'Labour', field: 'labour', mtdField: 'mtd_labour', money: true } },
   { key: 'counter', label: 'Counter Sale', color: '#F5A623',
-    colB: { label: 'CS Vol', field: 'counter_sale_volume', money: false },
-    colC: { label: 'CS Revenue', field: 'counter_sale_revenue', money: true } },
+    colB: { label: 'CS Vol', field: 'counter_sale_volume', mtdField: 'mtd_counter_sale_volume', money: false },
+    colC: { label: 'CS Revenue', field: 'counter_sale_revenue', mtdField: 'mtd_counter_sale_revenue', money: true } },
 ];
 
 function fmt(val, money) {
@@ -92,6 +93,7 @@ export default function AdminDashboard() {
   }
 
   const metric = METRIC_PAIRS.find((m) => m.key === metricKey);
+  const hasMtdSource = !!(metric.colB.mtdField || metric.colC.mtdField);
 
   function valueFor(colDef, entry, monthEntries) {
     if (mode === 'daily') {
@@ -122,8 +124,6 @@ export default function AdminDashboard() {
         branch: b, entry,
         colB: valueFor(metric.colB, entry, null),
         colC: valueFor(metric.colC, entry, null),
-        volume: entry?.delivered_volume || 0,
-        revenue: Number(entry?.revenue || 0),
       };
     });
   } else {
@@ -133,21 +133,10 @@ export default function AdminDashboard() {
     branchRows = branches.map((b) => {
       const monthEntries = allEntries.filter((e) => e.branch_id === b.id && e.entry_date.startsWith(selectedMonth));
       const latest = monthEntries[0];
-
-      let volume, revenue;
-      if (monthEntries.length > 1) {
-        volume = monthEntries.reduce((s, e) => s + (e.delivered_volume || 0), 0);
-        revenue = monthEntries.reduce((s, e) => s + Number(e.revenue || 0), 0);
-      } else {
-        volume = Number(latest?.mtd_volume ?? latest?.delivered_volume ?? 0);
-        revenue = Number(latest?.mtd_revenue ?? latest?.revenue ?? 0);
-      }
-
       return {
         branch: b, entry: latest,
         colB: valueFor(metric.colB, latest, monthEntries),
         colC: valueFor(metric.colC, latest, monthEntries),
-        volume, revenue,
         asOf: latest?.entry_date, dayCount: monthEntries.length,
       };
     });
@@ -162,8 +151,9 @@ export default function AdminDashboard() {
     return sortDir === 'asc' ? av - bv : bv - av;
   });
 
-  const totalVolume = branchRows.reduce((s, r) => s + r.volume, 0);
-  const totalRevenue = branchRows.reduce((s, r) => s + r.revenue, 0);
+  // Summary card now reflects whichever metric pair is selected, not always Vol/Revenue
+  const totalColB = branchRows.reduce((s, r) => s + r.colB, 0);
+  const totalColC = branchRows.reduce((s, r) => s + r.colC, 0);
   const missing = branchRows.filter((r) => !r.entry).map((r) => r.branch.name);
 
   const canEdit = role === 'admin' || role === 'ho_manager';
@@ -204,22 +194,23 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Summary card — now tracks whichever metric pair is selected below */}
         <div style={{ background: '#161820', borderRadius: 16, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#9096A8', textTransform: 'uppercase', marginBottom: 2 }}>
-            {mode === 'daily' ? 'Daily Summary' : 'Monthly Summary (MTD)'}
+            {mode === 'daily' ? 'Daily Summary' : 'Monthly Summary (MTD)'} · {metric.label}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: TABS.find(t => t.key === mode).color, marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: metric.color, marginBottom: 10 }}>
             {summaryLabel}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Volume</div>
-              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{totalVolume}</div>
+              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>{metric.colB.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{fmt(totalColB, metric.colB.money)}</div>
               <div style={{ fontSize: 11, color: '#22C55E', fontWeight: 700 }}>{branchRows.filter(r => r.entry).length}/{branchRows.length} reporting</div>
             </div>
             <div style={{ background: '#0D0E14', border: '1px solid #23252F', borderRadius: 12, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>Revenue</div>
-              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>₹{totalRevenue.toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: 11, color: '#9096A8', fontWeight: 600 }}>{metric.colC.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{fmt(totalColC, metric.colC.money)}</div>
               <div style={{ fontSize: 11, color: missing.length > 0 ? '#FF4D5E' : '#22C55E', fontWeight: 700 }}>
                 {missing.length > 0 ? `${missing.length} missing` : 'All reported'}
               </div>
@@ -252,9 +243,9 @@ export default function AdminDashboard() {
             style={{ width: '100%', background: '#161820', color: '#E8E9ED', border: '1px solid #2A2D3A', borderRadius: 10, padding: '10px 12px', marginBottom: 12, fontSize: 13 }} />
         )}
 
-        {/* Horizontal metric-pair scroller — picks what shows in columns B/C below */}
+        {/* Horizontal metric-pair scroller — picks what shows in Summary card + grid columns B/C */}
         <div style={{
-          display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 12,
+          display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 8,
           WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none',
         }}>
           {METRIC_PAIRS.map((m) => (
@@ -274,6 +265,12 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+
+        {mode === 'monthly' && !hasMtdSource && (
+          <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', color: '#8AB4F8', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 600, marginBottom: 12 }}>
+            ℹ {metric.label} has no separate MTD record — this month's total will match today's figure until branches log a 2nd day.
+          </div>
+        )}
 
         {missing.length > 0 && (
           <div style={{ background: 'rgba(255,77,94,0.1)', border: '1px solid rgba(255,77,94,0.3)', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, marginBottom: 14 }}>
