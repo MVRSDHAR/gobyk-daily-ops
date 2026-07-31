@@ -18,7 +18,7 @@ export default function AdminDashboard() {
   const [branches, setBranches] = useState([]);
   const [allEntries, setAllEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState('admin'); // set from users table below
+  const [role, setRole] = useState('admin');
   const [debugError, setDebugError] = useState('');
 
   const [mode, setMode] = useState('daily');
@@ -26,7 +26,6 @@ export default function AdminDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(todayStr().slice(0, 7));
   const [sortCol, setSortCol] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
-  const [sortMenuOpen, setSortMenuOpen] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -78,14 +77,15 @@ export default function AdminDashboard() {
       ? new Date(selectedMonth + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
       : '—';
     branchRows = branches.map((b) => {
+      // most recent entry for this branch within the selected month
       const monthEntries = allEntries.filter((e) => e.branch_id === b.id && e.entry_date.startsWith(selectedMonth));
-      const volume = monthEntries.reduce((s, e) => s + (e.delivered_volume || 0), 0);
-      const revenue = monthEntries.reduce((s, e) => s + Number(e.revenue || 0), 0);
-      return { branch: b, entry: monthEntries[0], volume, revenue, dayCount: monthEntries.length };
+      const latest = monthEntries[0]; // already sorted desc
+      const volume = Number(latest?.mtd_volume ?? 0);
+      const revenue = Number(latest?.mtd_revenue ?? 0);
+      return { branch: b, entry: latest, volume, revenue, asOf: latest?.entry_date };
     });
   }
 
-  // sort
   branchRows = [...branchRows].sort((a, b) => {
     let av, bv;
     if (sortCol === 'name') { av = a.branch.name; bv = b.branch.name; }
@@ -97,21 +97,19 @@ export default function AdminDashboard() {
 
   const totalVolume = branchRows.reduce((s, r) => s + r.volume, 0);
   const totalRevenue = branchRows.reduce((s, r) => s + r.revenue, 0);
-  const missing = mode === 'daily' ? branchRows.filter((r) => !r.entry).map((r) => r.branch.name) : [];
+  const missing = branchRows.filter((r) => !r.entry).map((r) => r.branch.name);
 
   const canEdit = role === 'admin' || role === 'ho_manager';
 
   function toggleSort(col) {
     if (sortCol === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
-    setSortMenuOpen(null);
   }
 
   return (
     <div style={{ fontFamily: "'Manrope', sans-serif", background: '#000000', minHeight: '100vh', padding: 14 }}>
       <div style={{ maxWidth: 480, margin: '0 auto', color: '#E8E9ED' }}>
 
-        {/* Header row: role + permission-gated actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ background: '#161820', color: '#F5A623', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 13 }}>
             🛡 {role === 'admin' ? 'Admin' : role === 'ho_manager' ? 'HO Manager' : 'Manager'}
@@ -139,10 +137,9 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Summary card with bordered stat boxes */}
         <div style={{ background: '#161820', borderRadius: 16, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#9096A8', textTransform: 'uppercase', marginBottom: 2 }}>
-            {mode === 'daily' ? 'Daily Summary' : 'Monthly Summary'}
+            {mode === 'daily' ? 'Daily Summary' : 'Monthly Summary (MTD)'}
           </div>
           <div style={{ fontSize: 13, fontWeight: 700, color: TABS.find(t => t.key === mode).color, marginBottom: 10 }}>
             {summaryLabel}
@@ -163,7 +160,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Underline tabs */}
         <div style={{ display: 'flex', gap: 18, borderBottom: '1px solid #23252F', marginBottom: 12 }}>
           {TABS.map((t) => (
             <div
@@ -189,25 +185,24 @@ export default function AdminDashboard() {
             style={{ width: '100%', background: '#161820', color: '#E8E9ED', border: '1px solid #2A2D3A', borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 13 }} />
         )}
 
-        {mode === 'daily' && missing.length > 0 && (
+        {missing.length > 0 && (
           <div style={{ background: 'rgba(255,77,94,0.1)', border: '1px solid rgba(255,77,94,0.3)', color: '#FF8A93', borderRadius: 12, padding: '10px 12px', fontSize: 11, fontWeight: 700, marginBottom: 14 }}>
-            ⚠ No entry: {missing.join(', ')}
+            ⚠ No {mode === 'daily' ? 'entry for this date' : 'data this month'}: {missing.join(', ')}
           </div>
         )}
 
-        {/* 3-linked-column grid, single scroll container */}
         {loading ? (
           <p style={{ color: '#9096A8' }}>Loading...</p>
         ) : (
           <div style={{ background: '#161820', borderRadius: 12, border: '1px solid #23252F', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr', padding: '10px 12px', borderBottom: '1px solid #23252F', position: 'relative' }}>
-              <div onClick={() => toggleSort('name')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr', padding: '10px 12px', borderBottom: '1px solid #23252F' }}>
+              <div onClick={() => toggleSort('name')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer' }}>
                 Branch {sortCol === 'name' && (sortDir === 'asc' ? '▾' : '▴')}
               </div>
-              <div onClick={() => toggleSort('volume')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+              <div onClick={() => toggleSort('volume')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
                 Vol {sortCol === 'volume' && (sortDir === 'asc' ? '▾' : '▴')}
               </div>
-              <div onClick={() => toggleSort('revenue')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+              <div onClick={() => toggleSort('revenue')} style={{ fontSize: 11, color: '#9096A8', fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
                 Revenue {sortCol === 'revenue' && (sortDir === 'asc' ? '▾' : '▴')}
               </div>
             </div>
@@ -222,7 +217,12 @@ export default function AdminDashboard() {
                     opacity: r.entry ? 1 : 0.4,
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{r.branch.name}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{r.branch.name}</div>
+                    {mode === 'monthly' && r.asOf && (
+                      <div style={{ fontSize: 10, color: '#9096A8' }}>as of {r.asOf}</div>
+                    )}
+                  </div>
                   <div style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.volume}</div>
                   <div style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
                     ₹{r.revenue.toLocaleString('en-IN')}
