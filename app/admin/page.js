@@ -77,12 +77,21 @@ export default function AdminDashboard() {
       ? new Date(selectedMonth + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
       : '—';
     branchRows = branches.map((b) => {
-      // most recent entry for this branch within the selected month
       const monthEntries = allEntries.filter((e) => e.branch_id === b.id && e.entry_date.startsWith(selectedMonth));
-      const latest = monthEntries[0]; // already sorted desc
-      const volume = Number(latest?.mtd_volume ?? 0);
-      const revenue = Number(latest?.mtd_revenue ?? 0);
-      return { branch: b, entry: latest, volume, revenue, asOf: latest?.entry_date };
+      const latest = monthEntries[0]; // sorted desc, most recent first
+
+      let volume, revenue;
+      if (monthEntries.length > 1) {
+        // Real daily data exists for multiple days this month — sum it, genuinely cumulative
+        volume = monthEntries.reduce((s, e) => s + (e.delivered_volume || 0), 0);
+        revenue = monthEntries.reduce((s, e) => s + Number(e.revenue || 0), 0);
+      } else {
+        // Only one entry this month — fall back to the static MTD snapshot field (legacy backfilled data)
+        volume = Number(latest?.mtd_volume ?? latest?.delivered_volume ?? 0);
+        revenue = Number(latest?.mtd_revenue ?? latest?.revenue ?? 0);
+      }
+
+      return { branch: b, entry: latest, volume, revenue, asOf: latest?.entry_date, dayCount: monthEntries.length };
     });
   }
 
@@ -220,7 +229,9 @@ export default function AdminDashboard() {
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{r.branch.name}</div>
                     {mode === 'monthly' && r.asOf && (
-                      <div style={{ fontSize: 10, color: '#9096A8' }}>as of {r.asOf}</div>
+                      <div style={{ fontSize: 10, color: '#9096A8' }}>
+                        {r.dayCount > 1 ? `${r.dayCount} days logged` : `as of ${r.asOf}`}
+                      </div>
                     )}
                   </div>
                   <div style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.volume}</div>
