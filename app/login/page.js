@@ -24,16 +24,7 @@ export default function Login() {
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: loginEmail,
       password: pin,
-    });ht: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: '#161820', border: '1px solid #2A2D3A',
-                opacity: canUpload ? 1 : 0.35, cursor: canUpload ? 'pointer' : 'not-allowed',
-                fontSize: 15,
-              }}
-            >
-              📷
-            </div>
-            <div
-              onClick={() => canEdit && router.push('/admin/entries')}
+    });
 
     if (authError) {
       setError('Incorrect PIN. Please try again.');
