@@ -8,8 +8,9 @@ export default function Login() {
   const [userId, setUserId] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
 
-  // Remember the User ID on this device (but never the PIN)
   useEffect(() => {
     const saved = localStorage.getItem('gobyk_remembered_id');
     if (saved) setUserId(saved);
@@ -33,7 +34,6 @@ export default function Login() {
 
     localStorage.setItem('gobyk_remembered_id', userId);
 
-    // Look up this user's role + must_change_pin flag
     const { data: profile } = await supabase
       .from('users')
       .select('role, must_change_pin')
@@ -47,6 +47,16 @@ export default function Login() {
     } else {
       router.push('/admin');
     }
+  }
+
+  async function handleForgotPin() {
+    setForgotSent(false);
+    await fetch('/api/forgot-pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneOrId: userId }),
+    });
+    setForgotSent(true);
   }
 
   return (
@@ -78,6 +88,35 @@ export default function Login() {
         <button type="submit" style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#F5A623', color: '#14151C', fontWeight: 800, marginTop: 8 }}>
           Login
         </button>
+
+        <p
+          onClick={() => setShowForgot(true)}
+          style={{ color: '#9096A8', fontSize: 12, textAlign: 'center', marginTop: 14, cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          Forgot PIN?
+        </p>
+
+        {showForgot && (
+          <div style={{ marginTop: 10, background: '#0D0E14', border: '1px solid #23252F', borderRadius: 10, padding: 14 }}>
+            {forgotSent ? (
+              <p style={{ color: '#22C55E', fontSize: 12 }}>Request sent. Someone will reset your PIN shortly.</p>
+            ) : (
+              <>
+                <p style={{ color: '#9096A8', fontSize: 12, marginBottom: 10 }}>
+                  We'll notify support to reset the PIN for: <strong>{userId || '(enter your User ID above first)'}</strong>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleForgotPin}
+                  disabled={!userId}
+                  style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: userId ? '#3B82F6' : '#3A3D4A', color: '#fff', fontWeight: 700, cursor: userId ? 'pointer' : 'not-allowed' }}
+                >
+                  Send Reset Request
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </form>
     </div>
   );
