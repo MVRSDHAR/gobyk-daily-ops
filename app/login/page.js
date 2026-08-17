@@ -62,7 +62,8 @@ export default function Login() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <form onSubmit={handleLogin} style={{ maxWidth: 380, width: '100%', background: '#161820', borderRadius: 18, padding: 24 }}>
-        <h2 style={{ color: '#F2F3F6', marginBottom: 4 }}>Gobyk Daily Ops</h2>
+        <img src="/gobyk-logo.png" alt="Gobyk" style={{ width: 72, height: 72, display: 'block', margin: '0 auto 12px' }} />
+        <h2 style={{ color: '#F2F3F6', marginBottom: 4, textAlign: 'center' }}>Gobyk Daily Ops</h2>
         <p style={{ color: '#9096A8', fontSize: 12, marginBottom: 20 }}>Enter your User ID and PIN</p>
 
         <label style={{ color: '#9096A8', fontSize: 11, fontWeight: 600 }}>User ID or Phone Number</label>
@@ -85,7 +86,7 @@ export default function Login() {
 
         {error && <p style={{ color: '#FF8A93', fontSize: 12 }}>{error}</p>}
 
-        <button type="submit" style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#F5A623', color: '#14151C', fontWeight: 800, marginTop: 8 }}>
+        <button type="submit" style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#F5690F', color: '#14151C', fontWeight: 800, marginTop: 8 }}>
           Login
         </button>
 
