@@ -157,6 +157,7 @@ export default function AdminDashboard() {
   const missing = branchRows.filter((r) => !r.entry).map((r) => r.branch.name);
 
   const canEdit = role === 'admin' || role === 'ho_manager';
+  const canUpload = role === 'admin' || role === 'ho_manager' || role === 'ho_uploader';
 
   function toggleSort(col) {
     if (sortCol === col) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -169,9 +170,21 @@ export default function AdminDashboard() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ background: '#161820', color: '#F5A623', border: '1px solid #2A2D3A', borderRadius: 10, padding: '8px 12px', fontWeight: 700, fontSize: 13 }}>
-            🛡 {role === 'admin' ? 'Admin' : role === 'ho_manager' ? 'HO Manager' : 'Manager'}
+            🛡 {role === 'admin' ? 'Admin' : role === 'ho_manager' ? 'HO Manager' : role === 'ho_uploader' ? 'HO Uploader' : role === 'full_viewer' ? 'Full Access Viewer' : 'Manager'}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div
+              onClick={() => canUpload && router.push('/uploader')}
+              title="Upload photo report"
+              style={{
+                width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: '#161820', border: '1px solid #2A2D3A',
+                opacity: canUpload ? 1 : 0.35, cursor: canUpload ? 'pointer' : 'not-allowed',
+                fontSize: 15,
+              }}
+            >
+              📷
+            </div>
             <div
               onClick={() => canEdit && router.push('/admin/entries')}
               title="Edit entries"
