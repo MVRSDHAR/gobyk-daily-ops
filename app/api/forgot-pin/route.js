@@ -32,7 +32,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         from: 'Gobyk Daily Ops <onboarding@resend.dev>',
-        to: 'progs.ceo@gmail.com',
+        to: 'ciifrol@gmail.com',
         subject: 'Gobyk Daily Ops — PIN Reset Request',
         text: emailBody,
       }),
